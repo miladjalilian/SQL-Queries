@@ -1,0 +1,41 @@
+DECLARE @ST_DATE smalldatetime; 
+DECLARE @EN_DATE smalldatetime;   
+
+SET @ST_DATE = '2020-04-20 00:00:00'
+SET @EN_DATE = '2020-04-20 23:00:00'
+ 
+
+select * into #t1
+from(
+SELECT (SUBSTRING(CELL_Name, 1,2) + SUBSTRING(CELL_Name, 5, 5)) AS Sector,
+	d.Date,
+	SUM([Total_DL_Payload(GB)]) AS TotalPayload, 
+	SUM([Average_Number_of_RRC_Connected_Users]) AS ConnectedUser,
+	SUM([Total_DL_Payload(GB)])/SUM([Average_Number_of_RRC_Connected_Users]) AS PPU,
+	SUM([DL_User_Throughput(Mbps)]*[Average_Number_of_RRC_Connected_Users])/SUM([Average_Number_of_RRC_Connected_Users]) AS UserThroughput,
+	SUM([Average_Number_of_RRC_Connected_Users])/SUM(CAST(left([Number_of_available_downlink_PRB],2) AS FLOAT)) AS UPM,
+	ROUND(SUM([Average_Number_of_RRC_Connected_Users])*0.11,3) AS Expected_Payload, 
+	ROUND(SUM([Average_Number_of_RRC_Connected_Users])*0.11 - SUM([Total_DL_Payload(GB)]),3) AS Loss_Payload
+FROM BI.Data_4G d JOIN BI.Connected_User_4G c
+ON
+	d.CELL_Name = c.CELLID AND d.Date = c.Date 
+WHERE 
+	d.Date >= @ST_DATE AND d.Date <= @EN_DATE AND
+	CAST(left([Number_of_available_downlink_PRB],2) AS FLOAT) <> 0 AND
+	[Average_Number_of_RRC_Connected_Users] <> 0
+GROUP BY  (SUBSTRING(CELL_Name, 1,2) + SUBSTRING(CELL_Name, 5, 5)), d.Date ) a
+	
+  
+  ---------------------------------
+  
+  select distinct Sector, max(ConnectedUser) as MAXConnectedUser
+  into #t2
+  from #t1
+  group by Sector
+  
+  
+  select o.Sector, o.MAXConnectedUser, w.[Date],w.TotalPayload, w.PPU, w.UserThroughput,w.UPM
+  from #t2 o
+  left join #t1 w
+  ON o.Sector = w.Sector
+  where o.MAXConnectedUser=w.ConnectedUser and o.Sector = w.Sector
